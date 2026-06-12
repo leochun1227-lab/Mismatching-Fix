@@ -1,6 +1,7 @@
 import math
 import re
 import sys
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from tkinter import BOTH, END, LEFT, RIGHT, TOP, X, Y, filedialog, messagebox
@@ -56,8 +57,128 @@ RULE_COLORS = {
 }
 
 
+CHINESE_COLUMN_NAMES = {
+    "Rule_ID": "规则编号",
+    "Diagnostic category": "诊断类别",
+    "Data-chain judgement": "数据链判断",
+    "Evidence-based reason": "证据原因",
+    "Process issues identified": "识别出的流程问题",
+    "How to optimise": "优化建议",
+    "Process issue category": "流程问题分类",
+    "Root cause hypothesis": "根因假设",
+    "Control gap": "控制缺口",
+    "Recommended control": "建议控制措施",
+    "Required evidence": "所需证据",
+    "Next action": "下一步动作",
+    "Preventive rule": "预防规则",
+    "Linked example cases": "关联示例案例",
+    "Priority": "优先级",
+    "Confidence": "置信度",
+    "Action owner": "行动负责人",
+    "Stock_Type": "库存类型",
+    "Lifecycle_Stage": "生命周期阶段",
+    "Mismatch_Type": "不匹配类型",
+    "Normalized_Chassis": "标准化底盘号",
+    "Original_Chassis": "原始底盘号/VIN",
+    "Actual situation after check": "核查后的实际情况",
+    "Metric": "指标",
+    "Value": "数值",
+    "Sheet": "工作表",
+    "Rows": "行数",
+    "Columns": "列数",
+    "Empty_Rate_%": "空值率_%",
+    "Status": "状态",
+}
+
+CHINESE_VALUE_TRANSLATIONS = {
+    "High": "高",
+    "Medium": "中",
+    "Low": "低",
+    "Data": "数据团队",
+    "Dealer": "经销商",
+    "SAP support": "SAP支持",
+    "Finance": "财务",
+    "Sales admin": "销售行政",
+    "Normal new stock": "普通新车库存",
+    "Unclassified stock": "未分类库存",
+    "Used stock / placeholder": "二手车/占位库存",
+    "Demo stock": "试驾/展示车库存",
+    "Category 1": "类别1",
+    "Category 2": "类别2",
+    "False Positive - Naming": "假阳性-命名/录入差异",
+    "SAP No Evidence": "SAP无证据",
+    "Process Break": "流程断点",
+    "Likely Data Timing Delay": "可能是数据时点延迟",
+    "Completed / Left Stock": "已完成/已离库",
+    "Needs Manual Review": "需要人工复核",
+    "Cancelled Sale / Refund Not Closed": "取消销售/退款未闭环",
+    "PGI Closure Violation": "PGI闭环违规",
+    "Reservation Resale Risk": "预订后转售风险",
+    "Demo / Used Special Handling": "试驾/二手特殊处理",
+    "Upstream Shipped / Dealer Not Updated": "上游已发运/经销商长期未更新",
+    "Total mismatch records": "Mismatch总记录数",
+    "No strong lifecycle evidence found.": "未发现强生命周期证据。",
+    "OK": "正常",
+    "Extra": "额外",
+    "Missing": "缺失",
+}
+
+CHINESE_PHRASE_TRANSLATIONS = {
+    "Chassis format or one-character input difference created a false mismatch.": "底盘号格式或单字符录入差异造成了假 mismatch。",
+    "Apply Normalized_Chassis matching before generating mismatch lists.": "生成 mismatch 清单前先执行标准化底盘号匹配。",
+    "The vehicle appears on the dealer list, but SAP lifecycle evidence is not available.": "车辆出现在经销商清单中，但SAP生命周期证据不可用。",
+    "SAP master/lifecycle data may be missing, delayed or entered under a different identifier.": "SAP主数据/生命周期数据可能缺失、延迟，或录入在不同识别号下。",
+    "Check source entry, SAP creation status and Chassis normalization before treating it as true stock.": "先检查源数据录入、SAP创建状态和底盘号标准化，再判断为真实库存异常。",
+    "Downstream PGI exists but the expected dealer SO evidence is missing.": "存在下游PGI，但缺少预期的经销商SO证据。",
+    "A downstream document exists without the upstream document normally required by the sales chain.": "存在下游单据，但缺少销售链通常要求的上游单据。",
+    "Audit document lineage and prevent downstream PGI records from being accepted without a linked SO.": "审计单据链路，防止无关联SO的下游PGI被接受。",
+    "Dealer PGI date appears earlier than factory PGI date.": "经销商PGI日期早于工厂PGI日期。",
+    "The expected factory-to-dealer movement sequence may be reversed or incorrectly dated.": "工厂到经销商的预期移动顺序可能被反向记录或日期录入错误。",
+    "Audit movement timestamps and correct the document sequence if dates were posted out of order.": "审计移动时间戳；如日期过账顺序错误，则纠正单据顺序。",
+    "Dealer PGI is the latest visible movement and no dealer invoice is available.": "经销商PGI是最新可见移动，且没有经销商发票证据。",
+    "PGI has been completed and not reversed, but invoice evidence is missing.": "PGI已完成且未冲销，但缺少发票证据。",
+    "Create an automatic PGI-without-invoice exception. Confirm whether the unit has left stock, invoice is delayed, or PGI should be reversed.": "建立自动的“PGI无发票”异常；确认车辆是否已离库、发票是否延迟，或PGI是否应冲销。",
+    "The data chain shows stock movement but no invoice closure.": "数据链显示库存移动，但没有发票闭环。",
+    "PGI can be posted without invoice follow-up or reversal tracking.": "PGI可能在没有发票跟进或冲销跟踪的情况下被过账。",
+    "Daily exception report for PGI with no invoice beyond allowed SLA; require owner, ageing and closure reason.": "对超过SLA仍无发票的PGI生成每日异常报表，并要求负责人、账龄和关闭原因。",
+    "Invoice exists but Bill-to evidence is missing.": "存在发票，但缺少Bill-to证据。",
+    "Billing document exists without a clear billing party.": "存在开票单据，但没有清晰的开票方。",
+    "Make Bill-to mandatory for invoice-linked reconciliation and block closure until the customer account is mapped.": "在发票相关对账中将Bill-to设为必填；客户账户映射前不允许关闭。",
+    "Sales order exists but PO/GR evidence is missing or zero.": "存在销售订单，但PO/GR证据缺失或为0。",
+    "Procurement evidence is absent even though sales order evidence exists.": "虽然有销售订单证据，但缺少采购证据。",
+    "Check whether this is internal transfer, delayed PO/GR capture or missing procurement linkage.": "检查是否为内部调拨、PO/GR采集延迟，或采购链路缺失。",
+    "Reverse PGI flag and Last_Movement_Is_PGI both appear active.": "Reverse PGI标记和Last_Movement_Is_PGI同时为有效。",
+    "Reversal status conflicts with the last movement status.": "冲销状态与最新移动状态冲突。",
+    "Reconcile movement history and ensure reversal status updates the latest movement indicator.": "核对移动历史，并确保冲销状态同步更新最新移动标记。",
+    "Dealer and factory material numbers do not match.": "经销商与工厂物料号不一致。",
+    "Material mismatch can point to order creation or vehicle assignment errors.": "物料不一致可能指向订单创建或车辆分配错误。",
+    "Validate material mapping between dealer SO and factory SO before closing the reconciliation.": "关闭对账前验证经销商SO与工厂SO之间的物料映射。",
+    "Lifecycle evidence suggests the unit may have completed or left the expected stock state.": "生命周期证据显示车辆可能已完成流程或离开预期库存状态。",
+    "List and SAP stock status may be out of sync after invoice, handover or PGI movement.": "发票、交车或PGI移动后，清单与SAP库存状态可能不同步。",
+    "Confirm handover/stock location and remove or refresh stale dealer list records.": "确认交车/库存位置，并移除或刷新过期的经销商清单记录。",
+    "SAP lifecycle evidence exists, but current List/SAP timing does not fully align.": "存在SAP生命周期证据，但当前清单/SAP时点未完全一致。",
+    "Data refresh timing or status propagation may be behind the physical stock situation.": "数据刷新或状态传递可能滞后于实物库存状态。",
+    "Wait for refresh cycle or check the list update mechanism for this dealer.": "等待刷新周期，或检查该经销商的清单更新机制。",
+    "The available evidence is not enough to make a confident final judgement.": "现有证据不足以做出高置信度最终判断。",
+    "Key lifecycle fields are missing or not mapped from the source workbook.": "关键生命周期字段缺失，或未从源工作簿映射出来。",
+    "Collect SO, PGI, reverse PGI, invoice, PO/GR and actual feedback, then rerun diagnosis.": "补充SO、PGI、Reverse PGI、发票、PO/GR和实际反馈后重新诊断。",
+    "Factory-side PGI was reversed while the dealer list still shows the unit.": "工厂侧PGI已冲销，但经销商清单仍显示该车辆。",
+    "Factory PGI reversal suggests the vehicle was returned or rolled back, but dealer list/SAP stock state is not aligned.": "工厂PGI冲销表明车辆可能退回或回滚，但经销商清单/SAP库存状态未对齐。",
+    "Add a reversal-close checklist: confirm reverse PGI, physical stock location, dealer list refresh and whether the dealer-side PGI/invoice also needs correction.": "增加冲销关闭清单：确认Reverse PGI、实物库存位置、经销商清单刷新，以及经销商侧PGI/发票是否也需要更正。",
+    "Upstream SAP evidence indicates the vehicle was shipped long ago, but the dealer/list side still has no matching update.": "上游SAP证据显示车辆很早已发运，但经销商/清单侧仍没有匹配更新。",
+    "A vehicle with upstream PGI/shipment evidence has remained absent from dealer-side updates far beyond the normal data refresh window.": "已有上游PGI/发运证据的车辆长期未出现在经销商侧更新中，远超正常数据刷新窗口。",
+    "Create an ageing control for upstream-shipped vehicles that are still missing from dealer/list updates. Any PGI older than 730 days without dealer confirmation should be escalated as a process-control exception, not treated as ordinary timing delay.": "为已上游发运但经销商/清单仍未更新的车辆建立账龄控制。PGI超过730天且无经销商确认的记录，应升级为流程控制异常，而不是普通时点延迟。",
+    "The upstream system shows the vehicle was shipped, but dealer-side ownership/list status was never confirmed or refreshed after a long ageing period.": "上游系统显示车辆已发运，但经过长期账龄后，经销商侧归属/清单状态仍未确认或刷新。",
+    "Long-aged upstream shipment exceptions can remain in a generic timing bucket without a mandatory dealer confirmation SLA.": "长期账龄的上游发运异常可能停留在普通时点延迟分类中，缺少强制经销商确认SLA。",
+    "Run a monthly ageing report for Only-in-SAP records with PGI/shipment dates older than 730 days and no dealer list update. Require dealer confirmation, physical location proof and list refresh evidence.": "每月生成账龄报表，筛查PGI/发运日期超过730天且无经销商清单更新的Only-in-SAP记录；要求提供经销商确认、实物位置证明和清单刷新证据。",
+    "PGI/shipment document and date, dealer list refresh history, dealer physical confirmation, ownership/transfer record and final stock status.": "PGI/发运单据及日期、经销商清单刷新历史、经销商实物确认、归属/转移记录和最终库存状态。",
+    "Dealer confirms whether the vehicle was received/sold/transferred; Data team checks list refresh history; SAP support validates upstream movement and ownership chain.": "经销商确认车辆是否已接收/销售/转移；数据团队检查清单刷新历史；SAP支持验证上游移动和归属链路。",
+    "If upstream PGI/shipment evidence is older than 730 days and dealer/list update is missing, auto-escalate as a high-confidence ageing exception.": "如果上游PGI/发运证据超过730天且缺少经销商/清单更新，自动升级为高置信度账龄异常。",
+}
+
+
 FIELD_ALIASES = {
-    "chassis": ["Chassis", "Chassis num", "Chassis_Num", "VIN", "Normalized_Chassis"],
+    "chassis": ["Chassis", "Chassis num", "Chassis_Num", "Chassis Number", "Chassis_Number", "VIN", "VIN Number", "VIN_Number", "Vehicle Identification Number", "Normalized_Chassis"],
     "mismatch_type": ["Mismatch_Type", "Mismatch type", "Type"],
     "found_other": ["Found_In_Other_Lists", "Found in other lists"],
     "so3120": ["SalesOrder_3120", "SO_3120", "Dealer SO", "Dealer_SO"],
@@ -67,7 +188,7 @@ FIELD_ALIASES = {
     "matnr3110": ["SO_Item0010_MATNR_3110", "MATNR_3110", "Material_3110", "SO_MATNR_3110"],
     "pgi": ["SalesOrderPGI_Doc", "SalesOrderPGI_Doc_3120", "PGI_3120", "PGI", "PGI_Doc", "PGI_Doc_3120"],
     "pgi3110": ["SalesOrderPGI_Doc_3110", "PGI_3110", "PGI_Doc_3110", "Factory_PGI"],
-    "pgi_date": ["PGI_Date", "PGI date", "PGI_Date_3120", "PGI_Date_3110"],
+    "pgi_date": ["PGI_Date", "PGI date", "PGI_Date_3120", "PGI_Date_3110", "SalesOrderPGI_Date", "SalesOrderPGI_Date_3120", "SalesOrderPGI_Date_3110"],
     "pgi_date3120": ["PGI_Date_3120", "PGI date 3120"],
     "pgi_date3110": ["PGI_Date_3110", "PGI date 3110"],
     "reverse": ["Reverse_PGI", "Reverse_PGI_3120", "Reverse PGI", "Reverse PGI 3120"],
@@ -81,6 +202,7 @@ FIELD_ALIASES = {
     "po_count": ["PO_Number_Count", "PO Count", "PO_Count"],
     "gr": ["PO_GR_Date", "GR_Date", "GR Date"],
     "actual": ["Actual situation after check", "Actual situation", "Actual feedback"],
+    "dealer_update": ["Dealer_Update_Date", "Dealer update date", "Dealer_Last_Update", "List_Update_Date", "List update date", "Dealer list refresh date"],
 }
 
 
@@ -124,12 +246,35 @@ def truthy(value):
 
 def normalize_chassis(value):
     text = cell_text(value).upper()
-    text = re.sub(r"^VIN\s*:\s*", "", text)
+    text = re.sub(r"^(VIN|VIN NUMBER|CHASSIS|CHASSIS NUMBER)\s*[:：]\s*", "", text)
     text = re.sub(r"\s*-\s*", "-", text)
     text = re.sub(r"\s+", "", text)
+    # Dealer reports sometimes provide a full 17-character VIN while SAP/list matching
+    # is performed on chassis number. Use the common last-7 chassis convention so
+    # VIN-only inputs can still match chassis-number records.
+    if re.fullmatch(r"[A-Z0-9]{17}", text):
+        text = text[-7:]
     if re.fullmatch(r"0+\d+", text):
         text = text.lstrip("0") or "0"
     return text
+
+
+def parse_date(value):
+    text = cell_text(value)
+    if not text:
+        return None
+    parsed = pd.to_datetime(text, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.to_pydatetime()
+
+
+def days_since(value, today=None):
+    parsed = parse_date(value)
+    if parsed is None:
+        return None
+    today = today or datetime.today()
+    return (today.date() - parsed.date()).days
 
 
 def levenshtein(a, b, max_distance=2):
@@ -166,6 +311,74 @@ def find_column(df, aliases):
 
 def count_present(*values):
     return sum(1 for value in values if truthy(value))
+
+
+def translate_to_chinese(value):
+    text = cell_text(value)
+    if not text:
+        return text
+    if text in CHINESE_VALUE_TRANSLATIONS:
+        return CHINESE_VALUE_TRANSLATIONS[text]
+    if text in CHINESE_PHRASE_TRANSLATIONS:
+        return CHINESE_PHRASE_TRANSLATIONS[text]
+    translated = text
+    # Translate summary prefixes and dynamic evidence labels while preserving IDs, dates and numbers.
+    prefix_patterns = [
+        ("Rule_ID: ", "规则编号："),
+        ("Diagnostic category: ", "诊断类别："),
+        ("Data-chain judgement: ", "数据链判断："),
+        ("Process issue category: ", "流程问题分类："),
+        ("Priority: ", "优先级："),
+        ("Action owner: ", "行动负责人："),
+        ("Stock_Type: ", "库存类型："),
+        ("Confidence: ", "置信度："),
+        ("Mismatch: ", "不匹配类型："),
+        ("SO count: ", "SO数量："),
+        ("Reverse PGI: ", "Reverse PGI："),
+        ("Invoice: ", "发票："),
+        ("Bill-to: ", "Bill-to："),
+        ("Other lists: ", "其他清单："),
+        ("PGI age: ", "PGI账龄："),
+        ("Dealer update: ", "经销商更新："),
+    ]
+    for english, chinese in prefix_patterns:
+        translated = translated.replace(english, chinese)
+    phrase_replacements = {
+        " days": "天",
+        "Blank": "空白",
+        "Only in List": "仅在清单中",
+        "Only in SAP": "仅在SAP中",
+        "Mismatch detail": "Mismatch明细",
+        "Chassis matching": "底盘号匹配",
+        "Missing SAP evidence": "SAP证据缺失",
+        "Timing / sync delay": "时点/同步延迟",
+        "Completed or left stock": "已完成或已离库",
+        "PGI without invoice": "PGI无发票",
+        "Existence dependency violation": "上下游依赖违规",
+        "Invoice master data gap": "发票主数据缺口",
+        "PO / GR evidence gap": "PO/GR证据缺口",
+        "PGI date sequence exception": "PGI日期顺序异常",
+        "Reverse PGI status conflict": "Reverse PGI状态冲突",
+        "Material consistency exception": "物料一致性异常",
+        "Special stock pool": "特殊库存池",
+        "List ownership check": "清单归属检查",
+        "Upstream shipped without dealer update": "上游已发运但经销商未更新",
+        "Unresolved upstream shipment ageing": "上游发运长期未闭环",
+    }
+    for english, chinese in {**CHINESE_VALUE_TRANSLATIONS, **phrase_replacements}.items():
+        translated = translated.replace(english, chinese)
+    return translated
+
+
+def translate_dataframe_to_chinese(df):
+    if df is None or df.empty:
+        return df
+    translated = df.copy()
+    for col in translated.columns:
+        if not pd.api.types.is_numeric_dtype(translated[col]):
+            translated[col] = translated[col].map(translate_to_chinese)
+    translated = translated.rename(columns={col: CHINESE_COLUMN_NAMES.get(col, col) for col in translated.columns})
+    return translated
 
 
 class DiagnosisEngine:
@@ -444,6 +657,8 @@ class DiagnosisEngine:
         so_count = first_existing(row, FIELD_ALIASES["so_count"])
         matnr = first_existing(row, FIELD_ALIASES["matnr3120"]) or first_existing(row, FIELD_ALIASES["matnr3110"])
         pgi = first_existing(row, FIELD_ALIASES["pgi"])
+        pgi_date = first_existing(row, FIELD_ALIASES["pgi_date"])
+        dealer_update = first_existing(row, FIELD_ALIASES["dealer_update"])
         reverse = first_existing(row, FIELD_ALIASES["reverse"])
         last_pgi = first_existing(row, FIELD_ALIASES["last_pgi"])
         invoice = first_existing(row, FIELD_ALIASES["invoice"]) or first_existing(row, FIELD_ALIASES["invoice3110"])
@@ -473,6 +688,7 @@ class DiagnosisEngine:
             ("SO count", so_count),
             ("MATNR", matnr),
             ("PGI", pgi),
+            ("PGI date", pgi_date),
             ("Reverse PGI", reverse),
             ("Invoice", invoice),
             ("PO", po),
@@ -728,6 +944,45 @@ class DiagnosisEngine:
                 diagnostic_category="Category 2",
             )
 
+        upstream_pgi_date = pgi_date3120 or pgi_date3110 or pgi_date
+        upstream_pgi_age = days_since(upstream_pgi_date)
+        dealer_update_age = days_since(dealer_update)
+        stale_dealer_update = not truthy(dealer_update) or (dealer_update_age is not None and dealer_update_age >= 180)
+        if (
+            "ONLY IN SAP" in mismatch_upper
+            and (truthy(pgi) or truthy(pgi3110) or truthy(upstream_pgi_date))
+            and upstream_pgi_age is not None
+            and upstream_pgi_age >= 730
+            and stale_dealer_update
+            and not truthy(found_other)
+        ):
+            aged_evidence = evidence
+            age_text = f"PGI age: {upstream_pgi_age} days"
+            update_text = f"Dealer update: {dealer_update or 'not available'}"
+            aged_evidence = f"{aged_evidence}; {age_text}; {update_text}" if aged_evidence else f"{age_text}; {update_text}"
+            return DiagnosticResult(
+                "Upstream SAP evidence indicates the vehicle was shipped long ago, but the dealer/list side still has no matching update.",
+                "Upstream Shipped / Dealer Not Updated",
+                aged_evidence,
+                "A vehicle with upstream PGI/shipment evidence has remained absent from dealer-side updates far beyond the normal data refresh window.",
+                "Create an ageing control for upstream-shipped vehicles that are still missing from dealer/list updates. Any PGI older than 730 days without dealer confirmation should be escalated as a process-control exception, not treated as ordinary timing delay.",
+                "Dealer",
+                "High",
+                "High",
+                stock_type,
+                "Upstream shipped without dealer update",
+                rule_id="R14",
+                diagnostic_category="Category 1",
+                issue_category="Unresolved upstream shipment ageing",
+                root_cause="The upstream system shows the vehicle was shipped, but dealer-side ownership/list status was never confirmed or refreshed after a long ageing period.",
+                control_gap="Long-aged upstream shipment exceptions can remain in a generic timing bucket without a mandatory dealer confirmation SLA.",
+                recommended_control="Run a monthly ageing report for Only-in-SAP records with PGI/shipment dates older than 730 days and no dealer list update. Require dealer confirmation, physical location proof and list refresh evidence.",
+                required_evidence="PGI/shipment document and date, dealer list refresh history, dealer physical confirmation, ownership/transfer record and final stock status.",
+                next_action="Dealer confirms whether the vehicle was received/sold/transferred; Data team checks list refresh history; SAP support validates upstream movement and ownership chain.",
+                preventive_rule="If upstream PGI/shipment evidence is older than 730 days and dealer/list update is missing, auto-escalate as a high-confidence ageing exception.",
+                linked_cases="R14 upstream-shipped long ageing cases",
+            )
+
         if truthy(matnr3120) and truthy(matnr3110) and matnr3120 != matnr3110 and "Z19" not in matnr3120.upper() and "Z19" not in matnr3110.upper():
             return DiagnosticResult(
                 "Dealer and factory material numbers do not match.",
@@ -841,15 +1096,27 @@ class DiagnosisEngine:
             "Evidence incomplete",
         )
 
-    def export_report(self, path):
+    def export_report(self, path, language="en"):
         if self.analysis.empty:
             raise ValueError("还没有诊断结果，请先运行诊断。")
         summary = self._summary_frame()
+        analysis = self.analysis
+        preview = self.preview
+        dashboard_sheet = "Dashboard"
+        diagnosis_sheet = "Mismatch_Diagnosis"
+        quality_sheet = "Import_Quality"
+        if language == "zh":
+            summary = translate_dataframe_to_chinese(summary)
+            analysis = translate_dataframe_to_chinese(analysis)
+            preview = translate_dataframe_to_chinese(preview)
+            dashboard_sheet = "统计看板"
+            diagnosis_sheet = "Mismatch诊断"
+            quality_sheet = "导入质量"
         with pd.ExcelWriter(path, engine="openpyxl") as writer:
-            summary.to_excel(writer, sheet_name="Dashboard", index=False)
-            self.analysis.to_excel(writer, sheet_name="Mismatch_Diagnosis", index=False)
-            self.preview.to_excel(writer, sheet_name="Import_Quality", index=False)
-        self._style_report(path)
+            summary.to_excel(writer, sheet_name=dashboard_sheet, index=False)
+            analysis.to_excel(writer, sheet_name=diagnosis_sheet, index=False)
+            preview.to_excel(writer, sheet_name=quality_sheet, index=False)
+        self._style_report(path, diagnosis_sheet=diagnosis_sheet)
 
     def _summary_frame(self):
         if self.analysis.empty:
@@ -865,7 +1132,7 @@ class DiagnosisEngine:
                 rows.append({"Metric": f"{column}: {key}", "Value": int(value)})
         return pd.DataFrame(rows)
 
-    def _style_report(self, path):
+    def _style_report(self, path, diagnosis_sheet="Mismatch_Diagnosis"):
         wb = load_workbook(path)
         for ws in wb.worksheets:
             header_fill = PatternFill("solid", fgColor=RULE_COLORS["Header"])
@@ -874,13 +1141,15 @@ class DiagnosisEngine:
                 cell.fill = header_fill
                 cell.font = Font(bold=True, color="1E2A36")
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-            ws.freeze_panes = "D2" if ws.title == "Mismatch_Diagnosis" else "A2"
+            ws.freeze_panes = "D2" if ws.title == diagnosis_sheet else "A2"
             ws.auto_filter.ref = ws.dimensions
             for row in ws.iter_rows(min_row=2):
                 priority = ""
-                if ws.title == "Mismatch_Diagnosis":
+                if ws.title == diagnosis_sheet:
                     if "Priority" in headers:
                         priority = row[headers.index("Priority")].value
+                    elif "优先级" in headers:
+                        priority = {"高": "High", "中": "Medium", "低": "Low"}.get(row[headers.index("优先级")].value, "")
                 fill_color = RULE_COLORS.get(priority, None)
                 for cell in row:
                     cell.alignment = Alignment(vertical="top", wrap_text=True)
@@ -1190,6 +1459,7 @@ class App(tk.Tk):
         ttk.Button(sidebar, text="导入 Excel", style="Accent.TButton", command=self.import_file).pack(fill=X, padx=24, pady=(0, 10))
         ttk.Button(sidebar, text="运行智能诊断", style="Secondary.TButton", command=self.run_diagnosis).pack(fill=X, padx=24, pady=10)
         ttk.Button(sidebar, text="导出分析报告", style="Secondary.TButton", command=self.export_report).pack(fill=X, padx=24, pady=10)
+        ttk.Button(sidebar, text="导出中文报告", style="Secondary.TButton", command=self.export_chinese_report).pack(fill=X, padx=24, pady=10)
         ttk.Button(sidebar, text="写入反馈与改进", style="Secondary.TButton", command=self.save_feedback).pack(fill=X, padx=24, pady=10)
 
         ttk.Separator(sidebar).pack(fill=X, padx=24, pady=22)
@@ -1295,6 +1565,7 @@ class App(tk.Tk):
             ("R11", "Return/refund process missing evidence", "High", "Sales admin", "退车/退款/取消后缺 return、refund、reverse PGI、stock reinstatement 凭证", "Build a mandatory return/refund evidence pack."),
             ("R12", "PGI Closure Violation", "High", "SAP support", "PGI 后车辆仍在库存或缺离场/回滚证明", "Every PGI must close by departure proof or reverse PGI proof."),
             ("R13", "Reservation Resale Risk", "High", "Sales admin", "多次预定/销售尝试，取消释放门控不清晰", "Use reservation lock and release approval before resale."),
+            ("R14", "Upstream Shipped / Dealer Not Updated", "High", "Dealer", "Only in SAP，PGI/发运日期超过730天且经销商清单长期无更新", "Escalate long-aged upstream shipment records as high-confidence ageing exceptions."),
             ("C2", "Needs Manual Review", "Medium", "Data", "字段不足或证据低置信，需要人工补充", "Collect required lifecycle evidence and rerun diagnosis."),
         ]
         self.rules_df = pd.DataFrame(rows, columns=["Rule_ID", "Rule", "Priority", "Owner", "Meaning", "Suggested optimisation"])
@@ -1415,12 +1686,20 @@ class App(tk.Tk):
             self.status.set("诊断失败")
 
     def export_report(self):
+        self._export_report(language="en")
+
+    def export_chinese_report(self):
+        self._export_report(language="zh")
+
+    def _export_report(self, language="en"):
         if self.engine.analysis.empty:
             messagebox.showwarning("尚无结果", "请先运行智能诊断。")
             return
-        default_name = f"{self.engine.source_path.stem}_智能诊断报告.xlsx" if self.engine.source_path else "智能诊断报告.xlsx"
+        suffix = "中文诊断报告" if language == "zh" else "智能诊断报告"
+        title = "导出中文分析报告" if language == "zh" else "导出分析报告"
+        default_name = f"{self.engine.source_path.stem}_{suffix}.xlsx" if self.engine.source_path else f"{suffix}.xlsx"
         path = filedialog.asksaveasfilename(
-            title="导出分析报告",
+            title=title,
             defaultextension=".xlsx",
             initialfile=default_name,
             filetypes=[("Excel workbook", "*.xlsx")],
@@ -1428,7 +1707,7 @@ class App(tk.Tk):
         if not path:
             return
         try:
-            self.engine.export_report(path)
+            self.engine.export_report(path, language=language)
             self.status.set(f"报告已导出：{Path(path).name}")
             messagebox.showinfo("导出完成", f"报告已生成：\n{path}")
         except Exception as exc:

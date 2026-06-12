@@ -31,13 +31,13 @@ python dealer_mismatch_diagnostic_app.py
 
 - Excel 导入与结构检查
 - Sheet 行数、字段数、空值率预览
-- Chassis 标准化：去 `VIN:`、去前导零、统一大小写、统一 USED 横杠空格、去多余空格
+- Chassis/VIN 标准化：识别 `Chassis`、`VIN`、`VIN Number` 等字段，去 `VIN:` / `CHASSIS:` 前缀、去前导零、统一大小写、统一 USED 横杠空格、去多余空格；当来源为 17 位 VIN 时自动取后 7 位作为底盘号参与匹配
 - List/SAP 智能配对：标准化完全一致、编辑距离 1 的疑似假 mismatch
 - 五层数据链诊断：命名、真假 mismatch、库存类型、生命周期证据、Actual feedback
 - 业务可读输出：Assumption、Actual situation、Data-chain judgement、Evidence reason、Process issue、Optimisation、Owner、Priority、Confidence
 - Actual feedback 回写
 - 统计看板：标签、优先级、Owner、Stock type、Confidence 分布
-- Excel 报告导出：淡红 High、淡黄 Medium、淡绿 Low、淡蓝灰表头，关键列自动 wrap text
+- Excel 报告导出：默认英文诊断报告；也可点击“导出中文报告”生成中文版本（中文 sheet 名、列名和常用诊断说明），淡红 High、淡黄 Medium、淡绿 Low、淡蓝灰表头，关键列自动 wrap text
 - 诊断结果页支持底部横向滚动条和 `< / >` 左右移动按钮
 - 诊断结果页支持鼠标拖拽蓝色框选择任意单元格区域，`Ctrl+C` 或点击“复制选区”后可直接粘贴到 Excel
 - 诊断结果页每列都有筛选行，双击对应列的 `Filter...` 可输入包含式过滤条件；点击“清除筛选”恢复
@@ -47,12 +47,13 @@ python dealer_mismatch_diagnostic_app.py
 - 导出的 Excel 会对长文本列自动 wrap text，并按文字长度估算行高，减少手动拉伸
 - 新增流程诊断包字段：`Process issue category`、`Root cause hypothesis`、`Control gap`、`Recommended control`、`Required evidence`、`Next action`、`Preventive rule`、`Linked example cases`
 - 新增重点流程规则：退车/退款无凭证、PGI 闭环违规、预定/二次销售风险
-- 借用旧版规则体系并扩展为 `M2`、`R0-R13`、`C2`：包含 SAP 无数据、存在性违反、PGI 后缺发票、占位料号、PO/GR 缺失、已完成/离场、3110 冲销退回等规则
+- 借用旧版规则体系并扩展为 `M2`、`R0-R14`、`C2`：包含 SAP 无数据、存在性违反、PGI 后缺发票、占位料号、PO/GR 缺失、已完成/离场、3110 冲销退回、上游 PGI/发运超过 730 天但经销商清单长期无更新等规则
 - 新增 `Rule_ID` 和 `Diagnostic category`，保留旧版 Category 1 / Category 2 的诊断分层
 - 流程诊断包现在会按最终判断自动补全，避免新增列大面积空白
 - `Actual situation after check` 从诊断主表隐藏，改由“反馈录入”页写入并在导出报告中保留
 - “反馈录入”页支持同时写入实际核实情况和手动流程化改进建议
 - “规则说明”页支持手动新增规则、选中规则后调整说明、优先级、Owner 和优化建议
+- `R14` 会把 `Only in SAP` 且存在上游 PGI/发运日期、PGI 账龄超过 730 天、经销商清单无更新或长期未更新的记录，判为 High Priority / High Confidence 的长期未闭环流程异常。
 
 ## 主要诊断标签
 
@@ -63,6 +64,7 @@ python dealer_mismatch_diagnostic_app.py
 - `Cancelled Sale / Refund Not Closed`
 - `Demo / Used Special Handling`
 - `Process Break`
+- `Upstream Shipped / Dealer Not Updated`
 - `Needs Manual Review`
 
 ## 后续可打包成 exe

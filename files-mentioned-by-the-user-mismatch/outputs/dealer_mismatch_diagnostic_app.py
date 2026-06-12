@@ -1,6 +1,7 @@
 import math
 import re
 import sys
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from tkinter import BOTH, END, LEFT, RIGHT, TOP, X, Y, filedialog, messagebox
@@ -57,7 +58,7 @@ RULE_COLORS = {
 
 
 FIELD_ALIASES = {
-    "chassis": ["Chassis", "Chassis num", "Chassis_Num", "VIN", "Normalized_Chassis"],
+    "chassis": ["Chassis", "Chassis num", "Chassis_Num", "Chassis Number", "Chassis_Number", "VIN", "VIN Number", "VIN_Number", "Vehicle Identification Number", "Normalized_Chassis"],
     "mismatch_type": ["Mismatch_Type", "Mismatch type", "Type"],
     "found_other": ["Found_In_Other_Lists", "Found in other lists"],
     "so3120": ["SalesOrder_3120", "SO_3120", "Dealer SO", "Dealer_SO"],
@@ -67,7 +68,7 @@ FIELD_ALIASES = {
     "matnr3110": ["SO_Item0010_MATNR_3110", "MATNR_3110", "Material_3110", "SO_MATNR_3110"],
     "pgi": ["SalesOrderPGI_Doc", "SalesOrderPGI_Doc_3120", "PGI_3120", "PGI", "PGI_Doc", "PGI_Doc_3120"],
     "pgi3110": ["SalesOrderPGI_Doc_3110", "PGI_3110", "PGI_Doc_3110", "Factory_PGI"],
-    "pgi_date": ["PGI_Date", "PGI date", "PGI_Date_3120", "PGI_Date_3110"],
+    "pgi_date": ["PGI_Date", "PGI date", "PGI_Date_3120", "PGI_Date_3110", "SalesOrderPGI_Date", "SalesOrderPGI_Date_3120", "SalesOrderPGI_Date_3110"],
     "pgi_date3120": ["PGI_Date_3120", "PGI date 3120"],
     "pgi_date3110": ["PGI_Date_3110", "PGI date 3110"],
     "reverse": ["Reverse_PGI", "Reverse_PGI_3120", "Reverse PGI", "Reverse PGI 3120"],
@@ -81,6 +82,7 @@ FIELD_ALIASES = {
     "po_count": ["PO_Number_Count", "PO Count", "PO_Count"],
     "gr": ["PO_GR_Date", "GR_Date", "GR Date"],
     "actual": ["Actual situation after check", "Actual situation", "Actual feedback"],
+    "dealer_update": ["Dealer_Update_Date", "Dealer update date", "Dealer_Last_Update", "List_Update_Date", "List update date", "Dealer list refresh date"],
 }
 
 
@@ -124,12 +126,35 @@ def truthy(value):
 
 def normalize_chassis(value):
     text = cell_text(value).upper()
-    text = re.sub(r"^VIN\s*:\s*", "", text)
+    text = re.sub(r"^(VIN|VIN NUMBER|CHASSIS|CHASSIS NUMBER)\s*[:：]\s*", "", text)
     text = re.sub(r"\s*-\s*", "-", text)
     text = re.sub(r"\s+", "", text)
+    # Dealer reports sometimes provide a full 17-character VIN while SAP/list matching
+    # is performed on chassis number. Use the common last-7 chassis convention so
+    # VIN-only inputs can still match chassis-number records.
+    if re.fullmatch(r"[A-Z0-9]{17}", text):
+        text = text[-7:]
     if re.fullmatch(r"0+\d+", text):
         text = text.lstrip("0") or "0"
     return text
+
+
+def parse_date(value):
+    text = cell_text(value)
+    if not text:
+        return None
+    parsed = pd.to_datetime(text, errors="coerce")
+    if pd.isna(parsed):
+        return None
+    return parsed.to_pydatetime()
+
+
+def days_since(value, today=None):
+    parsed = parse_date(value)
+    if parsed is None:
+        return None
+    today = today or datetime.today()
+    return (today.date() - parsed.date()).days
 
 
 def levenshtein(a, b, max_distance=2):
@@ -444,6 +469,8 @@ class DiagnosisEngine:
         so_count = first_existing(row, FIELD_ALIASES["so_count"])
         matnr = first_existing(row, FIELD_ALIASES["matnr3120"]) or first_existing(row, FIELD_ALIASES["matnr3110"])
         pgi = first_existing(row, FIELD_ALIASES["pgi"])
+        pgi_date = first_existing(row, FIELD_ALIASES["pgi_date"])
+        dealer_update = first_existing(row, FIELD_ALIASES["dealer_update"])
         reverse = first_existing(row, FIELD_ALIASES["reverse"])
         last_pgi = first_existing(row, FIELD_ALIASES["last_pgi"])
         invoice = first_existing(row, FIELD_ALIASES["invoice"]) or first_existing(row, FIELD_ALIASES["invoice3110"])
@@ -473,6 +500,7 @@ class DiagnosisEngine:
             ("SO count", so_count),
             ("MATNR", matnr),
             ("PGI", pgi),
+            ("PGI date", pgi_date),
             ("Reverse PGI", reverse),
             ("Invoice", invoice),
             ("PO", po),
@@ -726,6 +754,45 @@ class DiagnosisEngine:
                 "Reverse PGI status conflict",
                 rule_id="R4",
                 diagnostic_category="Category 2",
+            )
+
+        upstream_pgi_date = pgi_date3120 or pgi_date3110 or pgi_date
+        upstream_pgi_age = days_since(upstream_pgi_date)
+        dealer_update_age = days_since(dealer_update)
+        stale_dealer_update = not truthy(dealer_update) or (dealer_update_age is not None and dealer_update_age >= 180)
+        if (
+            "ONLY IN SAP" in mismatch_upper
+            and (truthy(pgi) or truthy(pgi3110) or truthy(upstream_pgi_date))
+            and upstream_pgi_age is not None
+            and upstream_pgi_age >= 730
+            and stale_dealer_update
+            and not truthy(found_other)
+        ):
+            aged_evidence = evidence
+            age_text = f"PGI age: {upstream_pgi_age} days"
+            update_text = f"Dealer update: {dealer_update or 'not available'}"
+            aged_evidence = f"{aged_evidence}; {age_text}; {update_text}" if aged_evidence else f"{age_text}; {update_text}"
+            return DiagnosticResult(
+                "Upstream SAP evidence indicates the vehicle was shipped long ago, but the dealer/list side still has no matching update.",
+                "Upstream Shipped / Dealer Not Updated",
+                aged_evidence,
+                "A vehicle with upstream PGI/shipment evidence has remained absent from dealer-side updates far beyond the normal data refresh window.",
+                "Create an ageing control for upstream-shipped vehicles that are still missing from dealer/list updates. Any PGI older than 730 days without dealer confirmation should be escalated as a process-control exception, not treated as ordinary timing delay.",
+                "Dealer",
+                "High",
+                "High",
+                stock_type,
+                "Upstream shipped without dealer update",
+                rule_id="R14",
+                diagnostic_category="Category 1",
+                issue_category="Unresolved upstream shipment ageing",
+                root_cause="The upstream system shows the vehicle was shipped, but dealer-side ownership/list status was never confirmed or refreshed after a long ageing period.",
+                control_gap="Long-aged upstream shipment exceptions can remain in a generic timing bucket without a mandatory dealer confirmation SLA.",
+                recommended_control="Run a monthly ageing report for Only-in-SAP records with PGI/shipment dates older than 730 days and no dealer list update. Require dealer confirmation, physical location proof and list refresh evidence.",
+                required_evidence="PGI/shipment document and date, dealer list refresh history, dealer physical confirmation, ownership/transfer record and final stock status.",
+                next_action="Dealer confirms whether the vehicle was received/sold/transferred; Data team checks list refresh history; SAP support validates upstream movement and ownership chain.",
+                preventive_rule="If upstream PGI/shipment evidence is older than 730 days and dealer/list update is missing, auto-escalate as a high-confidence ageing exception.",
+                linked_cases="R14 upstream-shipped long ageing cases",
             )
 
         if truthy(matnr3120) and truthy(matnr3110) and matnr3120 != matnr3110 and "Z19" not in matnr3120.upper() and "Z19" not in matnr3110.upper():
@@ -1189,7 +1256,7 @@ class App(tk.Tk):
 
         ttk.Button(sidebar, text="导入 Excel", style="Accent.TButton", command=self.import_file).pack(fill=X, padx=24, pady=(0, 10))
         ttk.Button(sidebar, text="运行智能诊断", style="Secondary.TButton", command=self.run_diagnosis).pack(fill=X, padx=24, pady=10)
-        ttk.Button(sidebar, text="导出分析报告", style="Secondary.TButton", command=self.export_report).pack(fill=X, padx=24, pady=10)
+        ttk.Button(sidebar, text="Export Report", style="Secondary.TButton", command=self.export_report).pack(fill=X, padx=24, pady=10)
         ttk.Button(sidebar, text="写入反馈与改进", style="Secondary.TButton", command=self.save_feedback).pack(fill=X, padx=24, pady=10)
 
         ttk.Separator(sidebar).pack(fill=X, padx=24, pady=22)
@@ -1295,6 +1362,7 @@ class App(tk.Tk):
             ("R11", "Return/refund process missing evidence", "High", "Sales admin", "退车/退款/取消后缺 return、refund、reverse PGI、stock reinstatement 凭证", "Build a mandatory return/refund evidence pack."),
             ("R12", "PGI Closure Violation", "High", "SAP support", "PGI 后车辆仍在库存或缺离场/回滚证明", "Every PGI must close by departure proof or reverse PGI proof."),
             ("R13", "Reservation Resale Risk", "High", "Sales admin", "多次预定/销售尝试，取消释放门控不清晰", "Use reservation lock and release approval before resale."),
+            ("R14", "Upstream Shipped / Dealer Not Updated", "High", "Dealer", "Only in SAP，PGI/发运日期超过730天且经销商清单长期无更新", "Escalate long-aged upstream shipment records as high-confidence ageing exceptions."),
             ("C2", "Needs Manual Review", "Medium", "Data", "字段不足或证据低置信，需要人工补充", "Collect required lifecycle evidence and rerun diagnosis."),
         ]
         self.rules_df = pd.DataFrame(rows, columns=["Rule_ID", "Rule", "Priority", "Owner", "Meaning", "Suggested optimisation"])
@@ -1418,9 +1486,9 @@ class App(tk.Tk):
         if self.engine.analysis.empty:
             messagebox.showwarning("尚无结果", "请先运行智能诊断。")
             return
-        default_name = f"{self.engine.source_path.stem}_智能诊断报告.xlsx" if self.engine.source_path else "智能诊断报告.xlsx"
+        default_name = f"{self.engine.source_path.stem}_diagnostic_report.xlsx" if self.engine.source_path else "diagnostic_report.xlsx"
         path = filedialog.asksaveasfilename(
-            title="导出分析报告",
+            title="Export analysis report",
             defaultextension=".xlsx",
             initialfile=default_name,
             filetypes=[("Excel workbook", "*.xlsx")],
